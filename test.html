@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>광고 시험 페이지</title>
+<style>
+  body { margin: 0; padding: 12px; background: #0f1117; color: #e8eaf0; font-family: -apple-system, "Noto Sans KR", sans-serif; }
+  .box { width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  input { width: 100%; box-sizing: border-box; min-height: 44px; margin: 4px 0 8px; padding: 0 10px; font-size: 15px; }
+  button { min-height: 52px; width: 100%; margin: 4px 0; font-size: 16px; font-weight: 700; border: 0; border-radius: 10px; background: #3ddc97; color: #0b1a12; }
+  label { display: block; margin: 8px 0; font-size: 15px; }
+  pre { white-space: pre-wrap; font-size: 12px; color: #9aa0b0; }
+  h1 { font-size: 16px; color: #9aa0b0; }
+</style>
+</head>
+<body>
+<h1>광고 시험 페이지 (Lovable 앱과 같은 방식)</h1>
+<div class="box"><div id="player"></div></div>
+
+<label>영상 1 주소 <input id="u1" type="url" placeholder="https://www.youtube.com/watch?v=..."></label>
+<label>영상 2 주소 <input id="u2" type="url" placeholder="https://www.youtube.com/watch?v=..."></label>
+<label>시작 초 (두 영상 공통) <input id="st" type="number" value="30"></label>
+<label>끝 초 (두 영상 공통) <input id="en" type="number" value="90"></label>
+<button id="b1" type="button">영상 1 재생</button>
+<button id="b2" type="button">영상 2 재생</button>
+<pre id="log"></pre>
+
+<script>
+(function () {
+  var player = null, ready = false, pending = null;
+  function $(id) { return document.getElementById(id); }
+  function log(m) { var d = new Date(); $('log').textContent = d.toLocaleTimeString() + ' ' + m + '\n' + $('log').textContent; }
+  function vid(u) {
+    var m = String(u).match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+  function play(n) {
+    var id = vid($('u' + n).value);
+    if (!id) { log('영상 ' + n + ' 주소를 확인하세요.'); return; }
+    var opts = { videoId: id, startSeconds: Number($('st').value) || 0 };
+    var end = Number($('en').value);
+    if (end > opts.startSeconds) opts.endSeconds = end;
+    if (!ready) { pending = opts; log('플레이어 준비 중...'); return; }
+    log('loadVideoById ' + JSON.stringify(opts));
+    player.loadVideoById(opts);
+  }
+  window.onYouTubeIframeAPIReady = function () {
+    player = new YT.Player('player', {
+      width: '100%', height: '100%',
+      playerVars: { playsinline: 1, controls: 1, rel: 0 },
+      events: {
+        onReady: function () { ready = true; log('준비됨'); if (pending) { var o = pending; pending = null; player.loadVideoById(o); } },
+        onStateChange: function (e) { log('상태 ' + e.data); },
+        onError: function (e) { log('오류 ' + e.data); }
+      }
+    });
+  };
+  $('b1').addEventListener('click', function () { play(1); });
+  $('b2').addEventListener('click', function () { play(2); });
+  var s = document.createElement('script');
+  s.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
