@@ -16,7 +16,15 @@
   h1 { font-size: 16px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
   .player-wrap { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; }
   .player-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .now { margin: 12px 2px 4px; }
+
+  .progress { margin-top: 8px; padding: 0 9px; }
+  .p-times { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .p-bar { position: relative; height: 40px; touch-action: none; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  .p-track { position: absolute; left: 0; right: 0; top: 50%; height: 6px; margin-top: -3px; background: var(--line); border-radius: 3px; }
+  .p-fill { position: absolute; left: 0; top: 50%; height: 6px; margin-top: -3px; width: 0; background: var(--accent); border-radius: 3px; }
+  .p-knob { position: absolute; left: 0; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+
+  .now { margin: 4px 2px 4px; }
   .now-label { font-size: 12px; color: var(--accent); font-weight: 600; }
   .now-title { font-size: 18px; font-weight: 700; margin-top: 2px; word-break: break-all; }
   .msg { margin: 8px 2px 0; font-size: 14px; line-height: 1.5; color: var(--muted); min-height: 21px; }
@@ -28,18 +36,25 @@
   .chip { flex: 1; min-height: 46px; padding: 0 4px; font-size: 14px; font-weight: 600; color: var(--text);
           background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
   .chip.active { background: var(--accent); border-color: var(--accent); color: #0b1a12; }
-  .loop-row { display: flex; gap: 8px; margin-top: 8px; }
-  .loop-row .chip { flex: 1; }
+  .loop-row, .nav-row, .auto-row { display: flex; gap: 8px; margin-top: 8px; align-items: stretch; }
   .loop-row .chip.wide { flex: 1.6; }
+  .nav-row .chip { min-height: 52px; font-size: 15px; }
+  .auto-row .chip { flex: 1.5; }
+  .sel { flex: 1; display: flex; flex-direction: column; justify-content: center; margin: 0; font-size: 11px; color: var(--muted); }
+  .sel select { margin-top: 2px; min-height: 36px; padding: 0 6px; font-size: 14px; color: var(--text);
+                background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
   .ab-info { margin: 8px 2px 0; font-size: 13px; color: var(--muted); }
+  .note { margin: 6px 2px 0; font-size: 12px; color: var(--muted); }
 
   .list-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 2px 8px; }
   .list-head span { font-size: 13px; color: var(--muted); font-weight: 600; }
   .link-btn { min-height: 44px; padding: 0 10px; background: none; border: 0; color: var(--accent); font-size: 14px; font-weight: 600; }
   .empty { display: none; padding: 28px 12px; text-align: center; color: var(--muted); line-height: 1.7; }
-  .card { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 14px; margin-bottom: 8px;
+  .card { position: relative; overflow: hidden; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 14px; margin-bottom: 8px;
           background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
   .card.active { border-color: var(--accent); background: var(--accent-bg); }
+  .card-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.08); }
+  .card-progress-fill { height: 100%; width: 0; background: var(--accent); }
   .card-main { flex: 1; min-width: 0; min-height: 52px; display: flex; flex-direction: column; justify-content: center; cursor: pointer; }
   .card-title { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card-time { font-size: 13px; color: var(--muted); margin-top: 2px; }
@@ -55,7 +70,7 @@
   .sheet { width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; background: var(--card);
            border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
   .sheet h2 { margin: 0 0 4px; font-size: 18px; }
-  label { display: block; margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
+  .sheet label { display: block; margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
   input { width: 100%; padding: 12px; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
   .row { display: flex; gap: 10px; }
   .row > div { flex: 1; }
@@ -72,6 +87,15 @@
 
   <div class="player-wrap"><div id="player"></div></div>
 
+  <div class="progress">
+    <div class="p-times"><span id="p-cur">0:00</span><span id="p-end">--:--</span></div>
+    <div class="p-bar" id="p-bar">
+      <div class="p-track"></div>
+      <div class="p-fill" id="p-fill"></div>
+      <div class="p-knob" id="p-knob"></div>
+    </div>
+  </div>
+
   <div class="now">
     <div class="now-label">현재 재생 중</div>
     <div class="now-title" id="now-title">재생 중인 클립이 없습니다</div>
@@ -86,6 +110,17 @@
       <button class="chip" id="b-btn" type="button">B 지정</button>
     </div>
     <div class="ab-info" id="ab-info"></div>
+
+    <div class="nav-row">
+      <button class="chip" id="prev-btn" type="button">⏮ 이전 곡</button>
+      <button class="chip" id="next-btn" type="button">다음 곡 ⏭</button>
+    </div>
+    <div class="auto-row">
+      <button class="chip" id="auto-btn" type="button">자동 다음 곡 꺼짐</button>
+      <label class="sel">페이드 아웃<select id="fadeout-sel"></select></label>
+      <label class="sel">페이드 인<select id="fadein-sel"></select></label>
+    </div>
+    <div class="note">iPhone에서는 볼륨 페이드가 적용되지 않을 수 있습니다.</div>
   </div>
 
   <div class="list-head" id="list-head">
@@ -130,6 +165,7 @@
   var STORAGE_KEY = 'mrp.clips.v1';
   var SETTINGS_KEY = 'mrp.settings.v1';
   var RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  var FADES = [0, 1, 2, 3, 5];
 
   var clips = loadClips();
   var settings = loadSettings();
@@ -141,6 +177,13 @@
   var editingId = null;
   var reorderMode = false;
   var guardUntil = 0;         // ignore end-of-clip checks right after a seek
+  var dragging = false;       // user is dragging the progress bar
+  var dragRatio = 0;
+  var activeFillEl = null;    // progress line inside the playing card
+  var fadeOutActive = false;
+  var fadeInActive = false;
+  var fadeInStart = 0;
+  var lastVol = null;
 
   function $(id) { return document.getElementById(id); }
 
@@ -161,11 +204,14 @@
     catch (e) { showMessage('저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.', true); }
   }
   function loadSettings() {
-    var s = { rate: 1, loop: false };
+    var s = { rate: 1, loop: false, autoNext: false, fadeOut: 2, fadeIn: 2 };
     try {
       var o = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
       if (RATES.indexOf(o.rate) >= 0) s.rate = o.rate;
       s.loop = o.loop === true;
+      s.autoNext = o.autoNext === true;
+      if (FADES.indexOf(o.fadeOut) >= 0) s.fadeOut = o.fadeOut;
+      if (FADES.indexOf(o.fadeIn) >= 0) s.fadeIn = o.fadeIn;
     } catch (e) {}
     return s;
   }
@@ -177,6 +223,11 @@
     for (var i = 0; i < clips.length; i++) { if (clips[i].id === id) return clips[i]; }
     return null;
   }
+  function indexOfClip(id) {
+    for (var i = 0; i < clips.length; i++) { if (clips[i].id === id) return i; }
+    return -1;
+  }
+  function currentClip() { return currentId ? findClip(currentId) : null; }
 
   // ---------- parsing / formatting ----------
   function parseVideoId(input) {
@@ -244,7 +295,47 @@
   }
   function clearMessage() { showMessage('', false); }
 
-  // ---------- controls (speed, loop, A/B) ----------
+  // ---------- volume / fades ----------
+  function setVol(v) {
+    if (!playerReady) return;
+    v = Math.max(0, Math.min(100, Math.round(v)));
+    if (v === lastVol) return;
+    lastVol = v;
+    player.setVolume(v);
+  }
+  function cancelFades() {
+    fadeOutActive = false;
+    fadeInActive = false;
+    setVol(100);
+  }
+  function startFadeIn() {
+    if (settings.fadeIn > 0) {
+      fadeInActive = true;
+      fadeInStart = Date.now();
+      setVol(0);
+    } else {
+      fadeInActive = false;
+      setVol(100);
+    }
+  }
+  function runFadeIn() {
+    if (!fadeInActive) return;
+    var p = (Date.now() - fadeInStart) / (settings.fadeIn * 1000);
+    if (p >= 1) { fadeInActive = false; setVol(100); }
+    else setVol(100 * p);
+  }
+
+  // ---------- controls (speed, loop, A/B, auto-next) ----------
+  function fillSelect(sel, value) {
+    sel.textContent = '';
+    FADES.forEach(function (f) {
+      var o = el('option', '', f + '초');
+      o.value = String(f);
+      if (f === value) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+
   function renderControls() {
     var row = $('speed-row');
     row.textContent = '';
@@ -257,11 +348,16 @@
     var loopBtn = $('loop-btn');
     loopBtn.textContent = settings.loop ? '구간 반복 켜짐' : '구간 반복';
     loopBtn.className = 'chip wide' + (settings.loop ? ' active' : '');
+    var autoBtn = $('auto-btn');
+    autoBtn.textContent = settings.autoNext ? '자동 다음 곡 켜짐' : '자동 다음 곡 꺼짐';
+    autoBtn.className = 'chip' + (settings.autoNext ? ' active' : '');
+    fillSelect($('fadeout-sel'), settings.fadeOut);
+    fillSelect($('fadein-sel'), settings.fadeIn);
     updateAbInfo();
   }
 
   function updateAbInfo() {
-    var c = currentId ? findClip(currentId) : null;
+    var c = currentClip();
     if (!c) { $('ab-info').textContent = ''; return; }
     $('ab-info').textContent = 'A ' + fmt(c.start) + ' · B ' +
       (typeof c.end === 'number' ? fmt(c.end) : '끝') + '   현재 속도 ' + settings.rate + 'x';
@@ -277,11 +373,19 @@
   function toggleLoop() {
     settings.loop = !settings.loop;
     saveSettings();
+    cancelFades();
+    renderControls();
+  }
+
+  function toggleAuto() {
+    settings.autoNext = !settings.autoNext;
+    saveSettings();
+    if (!settings.autoNext) cancelFades();
     renderControls();
   }
 
   function setPoint(which) {
-    var c = currentId ? findClip(currentId) : null;
+    var c = currentClip();
     if (!c || !playerReady) { showMessage('먼저 클립을 재생하세요.', true); return; }
     var t = Math.floor(player.getCurrentTime());
     if (which === 'A') {
@@ -297,9 +401,68 @@
     showMessage(which + ' 지점을 ' + fmt(t) + '로 지정했습니다.', false);
   }
 
+  // ---------- progress bar ----------
+  // Range shown by the bar: the clip's start..end (or the video's end when no end is set).
+  function clipRange(c) {
+    var e = typeof c.end === 'number' ? c.end : ((playerReady && player.getDuration()) || 0);
+    return [c.start, e];
+  }
+
+  function paintProgress(ratio, t, e) {
+    var pct = (ratio * 100) + '%';
+    $('p-fill').style.width = pct;
+    $('p-knob').style.left = pct;
+    $('p-cur').textContent = fmt(t);
+    $('p-end').textContent = e > 0 ? fmt(e) : '--:--';
+    if (activeFillEl) activeFillEl.style.width = pct;
+  }
+
+  function updateProgress(c) {
+    if (!c || !playerReady) { paintProgress(0, 0, 0); return; }
+    var r = clipRange(c);
+    var t = player.getCurrentTime() || 0;
+    var ratio = r[1] > r[0] ? Math.min(1, Math.max(0, (t - r[0]) / (r[1] - r[0]))) : 0;
+    paintProgress(ratio, t, r[1]);
+  }
+
+  function ratioFromEvent(ev) {
+    var rect = $('p-bar').getBoundingClientRect();
+    if (!rect.width) return 0;
+    return Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
+  }
+
+  function previewDrag(ev) {
+    var c = currentClip();
+    if (!c) return;
+    var r = clipRange(c);
+    dragRatio = ratioFromEvent(ev);
+    paintProgress(dragRatio, r[0] + dragRatio * (r[1] - r[0]), r[1]);
+  }
+
+  function startDrag(ev) {
+    var c = currentClip();
+    if (!c || !playerReady) return;
+    var r = clipRange(c);
+    if (!(r[1] > r[0])) return;
+    dragging = true;
+    try { $('p-bar').setPointerCapture(ev.pointerId); } catch (e) {}
+    if (ev.preventDefault) ev.preventDefault();
+    previewDrag(ev);
+  }
+
+  function endDrag(commit) {
+    if (!dragging) return;
+    dragging = false;
+    var c = currentClip();
+    if (!commit || !c || !playerReady) return;
+    var r = clipRange(c);
+    guardUntil = Date.now() + 600;
+    player.seekTo(r[0] + dragRatio * (r[1] - r[0]), true);
+  }
+
   // ---------- list ----------
   function updateNow() {
-    var c = currentId ? findClip(currentId) : null;
+    var c = currentClip();
     $('now-title').textContent = c ? c.title : '재생 중인 클립이 없습니다';
     updateAbInfo();
   }
@@ -316,6 +479,7 @@
   function render() {
     var list = $('list');
     list.textContent = '';
+    activeFillEl = null;
     $('empty').style.display = clips.length ? 'none' : 'block';
     $('list-head').style.display = clips.length ? 'flex' : 'none';
     $('reorder-btn').textContent = reorderMode ? '완료' : '순서 변경';
@@ -359,14 +523,24 @@
         card.appendChild(edit);
         card.appendChild(del);
       }
+
+      if (isActive) {
+        var line = el('div', 'card-progress');
+        activeFillEl = el('div', 'card-progress-fill');
+        line.appendChild(activeFillEl);
+        card.appendChild(line);
+      }
       list.appendChild(card);
     });
+    updateProgress(currentClip());
   }
 
   // ---------- playback ----------
-  function playClip(id) {
+  // auto === true when the app moves to the next clip by itself (keeps the fade-in running).
+  function playClip(id, auto) {
     var c = findClip(id);
     if (!c) return;
+    if (!auto) cancelFades();
     currentId = id;
     clearMessage();
     render();
@@ -389,6 +563,31 @@
     guardUntil = Date.now() + 800;
   }
 
+  function goRelative(delta) {
+    if (!clips.length) return;
+    var idx = indexOfClip(currentId);
+    if (idx < 0) { playClip(clips[0].id); return; }
+    var to = idx + delta;
+    if (to < 0) { showMessage('첫 번째 클립입니다.', false); return; }
+    if (to >= clips.length) { showMessage('마지막 클립입니다.', false); return; }
+    playClip(clips[to].id);
+  }
+
+  // Move on to the next clip when a clip ends (auto-next), or stop after the last one.
+  function advance() {
+    var idx = indexOfClip(currentId);
+    var next = idx >= 0 && idx + 1 < clips.length ? clips[idx + 1] : null;
+    if (!next) {
+      player.pauseVideo();
+      cancelFades();
+      showMessage('마지막 클립까지 재생했습니다.', false);
+      return;
+    }
+    fadeOutActive = false;
+    startFadeIn();
+    playClip(next.id, true);
+  }
+
   function onPlayerReady() {
     playerReady = true;
     player.setPlaybackRate(settings.rate);
@@ -400,17 +599,39 @@
     }
   }
 
-  // Runs often while a clip plays: enforces the clip's end time (stop or loop).
+  // Runs often: updates the progress bar, fades, and enforces the clip's end time.
   function tick() {
-    if (!playerReady || !currentId || Date.now() < guardUntil) return;
-    var c = findClip(currentId);
-    if (!c || typeof c.end !== 'number') return;
+    if (!playerReady) return;
+    var c = currentClip();
+    runFadeIn();
+    if (!dragging) updateProgress(c);
+    if (!c || Date.now() < guardUntil) return;
     if (player.getPlayerState() !== 1) return;
+
     var t = player.getCurrentTime();
-    // Only act just after the end point; if the user scrubbed far past it, leave them be.
-    if (t >= c.end && t < c.end + 2) {
+    var r = clipRange(c);
+    var autoMode = settings.autoNext && !settings.loop;
+
+    // Fade out during the last seconds of the clip.
+    if (autoMode && !fadeInActive && r[1] > r[0] && settings.fadeOut > 0) {
+      var remaining = (r[1] - t) / settings.rate;
+      if (remaining <= settings.fadeOut) {
+        fadeOutActive = true;
+        setVol(100 * remaining / settings.fadeOut);
+      } else if (fadeOutActive) {
+        fadeOutActive = false;
+        setVol(100);
+      }
+    } else if (fadeOutActive) {
+      fadeOutActive = false;
+      setVol(100);
+    }
+
+    // End point reached (only act just after it; if the user scrubbed far past it, leave them be).
+    if (typeof c.end === 'number' && t >= c.end && t < c.end + 2) {
       guardUntil = Date.now() + 600;
       if (settings.loop) player.seekTo(c.start, true);
+      else if (settings.autoNext) advance();
       else player.pauseVideo();
     }
   }
@@ -419,20 +640,24 @@
     if (e.data === 1) {
       if (player.getPlaybackRate() !== settings.rate) player.setPlaybackRate(settings.rate);
     } else if (e.data === 0) {
-      // Video reached its very end (clips without an end time, or a clip ending at the video end).
-      var c = currentId ? findClip(currentId) : null;
-      if (c && settings.loop) {
+      // The video reached its very end (clips without an end time, or ending at the video end).
+      var c = currentClip();
+      if (!c) return;
+      if (settings.loop) {
         guardUntil = Date.now() + 600;
         player.seekTo(c.start, true);
         player.playVideo();
+      } else if (settings.autoNext && Date.now() >= guardUntil) {
+        advance();
       }
     }
   }
 
   function onPlayerError(e) {
     var code = e && e.data;
-    var c = currentId ? findClip(currentId) : null;
+    var c = currentClip();
     loadedVideoId = null;
+    cancelFades();
     if (code === 101 || code === 150) {
       var link = null;
       if (c) {
@@ -521,6 +746,7 @@
     if (currentId === id) {
       currentId = null;
       loadedVideoId = null;
+      cancelFades();
       if (playerReady) player.stopVideo();
     }
     saveClips();
@@ -538,6 +764,21 @@
   $('a-btn').addEventListener('click', function () { setPoint('A'); });
   $('b-btn').addEventListener('click', function () { setPoint('B'); });
   $('reorder-btn').addEventListener('click', function () { reorderMode = !reorderMode; render(); });
+  $('auto-btn').addEventListener('click', toggleAuto);
+  $('prev-btn').addEventListener('click', function () { goRelative(-1); });
+  $('next-btn').addEventListener('click', function () { goRelative(1); });
+  $('fadeout-sel').addEventListener('change', function () {
+    settings.fadeOut = parseInt(this.value, 10); saveSettings();
+  });
+  $('fadein-sel').addEventListener('change', function () {
+    settings.fadeIn = parseInt(this.value, 10); saveSettings();
+  });
+
+  var bar = $('p-bar');
+  bar.addEventListener('pointerdown', startDrag);
+  bar.addEventListener('pointermove', function (ev) { if (dragging) previewDrag(ev); });
+  bar.addEventListener('pointerup', function () { endDrag(true); });
+  bar.addEventListener('pointercancel', function () { endDrag(false); });
 
   renderControls();
   render();
