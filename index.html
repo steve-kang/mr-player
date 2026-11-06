@@ -46,6 +46,17 @@
   .ab-info { margin: 8px 2px 0; font-size: 13px; color: var(--muted); }
   .note { margin: 6px 2px 0; font-size: 12px; color: var(--muted); }
 
+  .now-head { display: flex; align-items: center; justify-content: space-between; }
+  .ch-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; background: var(--bg);
+            border: 1px solid var(--line); border-radius: 10px; }
+  .ch-row.active { border-color: var(--accent); background: var(--accent-bg); }
+  .ch-main { flex: 1; min-width: 0; min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 12px;
+             background: none; border: 0; color: var(--text); text-align: left; font-size: 15px; font-family: inherit; }
+  .ch-time { min-width: 52px; color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ch-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ch-tools { display: none; gap: 8px; margin-top: 8px; }
+  .ch-tools .btn { font-size: 14px; }
+  #ch-text { min-height: 120px; resize: vertical; }
   .list-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 2px 8px; }
   .list-head span { font-size: 13px; color: var(--muted); font-weight: 600; }
   .link-btn { min-height: 44px; padding: 0 10px; background: none; border: 0; color: var(--accent); font-size: 14px; font-weight: 600; }
@@ -71,7 +82,7 @@
            border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
   .sheet h2 { margin: 0 0 4px; font-size: 18px; }
   .sheet label { display: block; margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
-  input { width: 100%; padding: 12px; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+  input, textarea { width: 100%; font-family: inherit; padding: 12px; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
   .row { display: flex; gap: 10px; }
   .row > div { flex: 1; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
@@ -97,7 +108,10 @@
   </div>
 
   <div class="now">
-    <div class="now-label">현재 재생 중</div>
+    <div class="now-head">
+      <div class="now-label">현재 재생 중</div>
+      <button class="link-btn" id="ch-btn" type="button">구획</button>
+    </div>
     <div class="now-title" id="now-title">재생 중인 클립이 없습니다</div>
   </div>
   <div class="msg" id="msg"></div>
@@ -158,17 +172,44 @@
     </form>
   </div>
 
+  <div class="overlay" id="ch-overlay">
+    <div class="sheet">
+      <h2>구획</h2>
+      <div class="hint">유튜브 영상 설명란의 시간표를 붙여넣으면 구획 버튼이 만들어집니다.</div>
+      <div class="empty" id="ch-empty">이 영상의 구획이 없습니다.<br>아래에 영상 설명을 붙여넣으세요.</div>
+      <div id="ch-list" style="margin-top:12px"></div>
+      <div class="ch-tools" id="ch-tools">
+        <button class="btn ghost" id="ch-addall" type="button">전체 구획을 클립으로 추가</button>
+        <button class="btn ghost" id="ch-clear" type="button">구획 지우기</button>
+      </div>
+      <label for="ch-text">유튜브 영상 설명 붙여넣기</label>
+      <textarea id="ch-text" rows="5" placeholder="0:00 찬양&#10;12:30 설교&#10;45:10 기도"></textarea>
+      <div class="msg" id="ch-msg"></div>
+      <div class="actions">
+        <button class="btn ghost" id="ch-close" type="button">닫기</button>
+        <button class="btn primary" id="ch-make" type="button">구획 만들기</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 (function () {
   'use strict';
 
   var STORAGE_KEY = 'mrp.clips.v1';
   var SETTINGS_KEY = 'mrp.settings.v1';
+  var CHAPTER_KEY = 'mrp.chapters.v1';
+  var TEMP_ID = '__chapter__';   // id of the temporary clip made when a chapter is played
   var RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
   var FADES = [0, 1, 2, 3, 5];
 
   var clips = loadClips();
   var settings = loadSettings();
+  var chapterStore = loadChapters();   // { videoId: [ {t, title} ] }
+  var tempClip = null;                  // the chapter being played (not saved in the clip list)
+  var chapterCtx = null;                // video the chapter sheet is open for
+  var chapterBase = '';                 // title prefix used when a chapter becomes a clip
+  var uidCounter = 0;
   var currentId = null;
   var loadedVideoId = null;   // the video currently loaded in the player
   var player = null;
@@ -218,8 +259,24 @@
   function saveSettings() {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
   }
-  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function loadChapters() {
+    try {
+      var o = JSON.parse(localStorage.getItem(CHAPTER_KEY) || '{}');
+      var out = {};
+      Object.keys(o).forEach(function (k) {
+        if (!Array.isArray(o[k])) return;
+        var list = o[k].filter(function (x) { return x && typeof x.t === 'number' && typeof x.title === 'string'; });
+        if (list.length) out[k] = list;
+      });
+      return out;
+    } catch (e) { return {}; }
+  }
+  function saveChapters() {
+    try { localStorage.setItem(CHAPTER_KEY, JSON.stringify(chapterStore)); } catch (e) {}
+  }
+  function uid() { return Date.now().toString(36) + (++uidCounter).toString(36) + Math.random().toString(36).slice(2, 5); }
   function findClip(id) {
+    if (tempClip && id === TEMP_ID) return tempClip;
     for (var i = 0; i < clips.length; i++) { if (clips[i].id === id) return clips[i]; }
     return null;
   }
@@ -387,6 +444,7 @@
   function setPoint(which) {
     var c = currentClip();
     if (!c || !playerReady) { showMessage('먼저 클립을 재생하세요.', true); return; }
+    if (c.id === TEMP_ID) { showMessage('구획 재생 중에는 A/B를 저장할 수 없습니다. 클립으로 추가한 뒤 사용하세요.', true); return; }
     var t = Math.floor(player.getCurrentTime());
     if (which === 'A') {
       if (typeof c.end === 'number' && t >= c.end) { showMessage('A는 B보다 앞이어야 합니다.', true); return; }
@@ -458,6 +516,161 @@
     var r = clipRange(c);
     guardUntil = Date.now() + 600;
     player.seekTo(r[0] + dragRatio * (r[1] - r[0]), true);
+  }
+
+  // ---------- chapters ----------
+  // A time like 12:30 or 1:02:15 anywhere in a line (not part of a longer number).
+  var TIME_RE = /(^|[^\d:])(\d{1,2}:\d{2}:\d{2}|\d{1,3}:\d{2})(?![\d:])/;
+
+  function timeToSeconds(text) {
+    var p = text.split(':').map(Number);
+    if (p.length === 3) {
+      if (p[1] > 59 || p[2] > 59) return null;
+      return p[0] * 3600 + p[1] * 60 + p[2];
+    }
+    if (p[1] > 59) return null;
+    return p[0] * 60 + p[1];
+  }
+
+  function cleanTitle(text) {
+    text = text.replace(/\(\s*\)|\[\s*\]|\{\s*\}|（\s*）|【\s*】/g, ' ');
+    text = text.replace(/^[\s\-–—|:·•▶►▷>*~.,]+/, '').replace(/[\s\-–—|:·•▶►▷>*~.,]+$/, '');
+    return text.replace(/\s+/g, ' ');
+  }
+
+  // Turns a pasted video description into [{t: seconds, title}] sorted by time.
+  function parseChapters(text) {
+    var seen = {};
+    var out = [];
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      var m = TIME_RE.exec(line);
+      if (!m) return;
+      var sec = timeToSeconds(m[2]);
+      if (sec === null || seen[sec]) return;
+      seen[sec] = true;
+      var cut = m.index + m[1].length;
+      out.push({ t: sec, title: cleanTitle(line.slice(0, cut) + ' ' + line.slice(cut + m[2].length)) });
+    });
+    out.sort(function (a, b) { return a.t - b.t; });
+    out.forEach(function (c, i) { if (!c.title) c.title = '구획 ' + (i + 1); });
+    return out;
+  }
+
+  function chapterList(videoId) { return chapterStore[videoId] || []; }
+
+  function tempIndex() {
+    if (!tempClip) return -1;
+    var list = chapterList(tempClip.videoId);
+    for (var i = 0; i < list.length; i++) { if (list[i].t === tempClip.start) return i; }
+    return -1;
+  }
+
+  // Plays one chapter: from its start to the next chapter's start (or the video's end).
+  function playChapter(videoId, index, auto) {
+    var list = chapterList(videoId);
+    var ch = list[index];
+    var next = list[index + 1];
+    if (!ch) return;
+    tempClip = { id: TEMP_ID, videoId: videoId, title: ch.title, start: ch.t, end: next ? next.t : null };
+    playClip(TEMP_ID, auto);
+  }
+
+  function setChMsg(text, isError) {
+    var box = $('ch-msg');
+    box.textContent = text;
+    box.className = 'msg' + (isError ? ' err' : '');
+  }
+
+  function activeChapterIndex() {
+    if (tempClip && tempClip.videoId === chapterCtx.videoId) return tempIndex();
+    if (playerReady && loadedVideoId === chapterCtx.videoId) {
+      var t = player.getCurrentTime() || 0;
+      var list = chapterList(chapterCtx.videoId);
+      var idx = -1;
+      for (var i = 0; i < list.length; i++) { if (list[i].t <= t) idx = i; }
+      return idx;
+    }
+    return -1;
+  }
+
+  function renderChapters() {
+    var box = $('ch-list');
+    box.textContent = '';
+    var list = chapterList(chapterCtx.videoId);
+    $('ch-empty').style.display = list.length ? 'none' : 'block';
+    $('ch-tools').style.display = list.length ? 'flex' : 'none';
+    var active = list.length ? activeChapterIndex() : -1;
+    list.forEach(function (ch, i) {
+      var row = el('div', 'ch-row' + (i === active ? ' active' : ''));
+      var main = el('button', 'ch-main');
+      main.type = 'button';
+      main.appendChild(el('span', 'ch-time', fmt(ch.t)));
+      main.appendChild(el('span', 'ch-title', ch.title));
+      main.addEventListener('click', function () {
+        chapterBase = chapterCtx.base;
+        closeChapters();
+        playChapter(chapterCtx.videoId, i, false);
+      });
+      var add = el('button', 'small-btn', '+ 클립');
+      add.type = 'button';
+      add.addEventListener('click', function () { addChapterClips([i]); });
+      row.appendChild(main);
+      row.appendChild(add);
+      box.appendChild(row);
+    });
+  }
+
+  function openChapters() {
+    var c = currentClip();
+    if (!c) { showMessage('먼저 클립을 재생하세요.', true); return; }
+    chapterCtx = { videoId: c.videoId, base: c.id === TEMP_ID ? chapterBase : c.title };
+    $('ch-text').value = '';
+    setChMsg('', false);
+    renderChapters();
+    $('ch-overlay').classList.add('open');
+  }
+  function closeChapters() { $('ch-overlay').classList.remove('open'); }
+
+  function makeChapters() {
+    var res = parseChapters($('ch-text').value);
+    if (!res.length) {
+      setChMsg('시간표(예: 12:30 설교)가 있는 줄을 찾지 못했습니다. 영상 설명란에 시간표가 있는지 확인해 주세요.', true);
+      return;
+    }
+    chapterStore[chapterCtx.videoId] = res;
+    saveChapters();
+    $('ch-text').value = '';
+    renderChapters();
+    setChMsg(res.length + '개의 구획을 만들었습니다.', false);
+  }
+
+  function clearChapters() {
+    if (!window.confirm('이 영상의 구획을 지울까요?')) return;
+    delete chapterStore[chapterCtx.videoId];
+    saveChapters();
+    renderChapters();
+    setChMsg('구획을 지웠습니다.', false);
+  }
+
+  function addChapterClips(indexes) {
+    var list = chapterList(chapterCtx.videoId);
+    indexes.forEach(function (i) {
+      var ch = list[i];
+      var next = list[i + 1];
+      var base = chapterCtx.base;
+      clips.push({ id: uid(), videoId: chapterCtx.videoId, title: base ? base + ' - ' + ch.title : ch.title,
+                   start: ch.t, end: next ? next.t : null });
+    });
+    saveClips();
+    render();
+    setChMsg(indexes.length + '개를 클립 목록에 추가했습니다.', false);
+  }
+
+  function addAllChapters() {
+    var list = chapterList(chapterCtx.videoId);
+    if (!list.length) return;
+    if (!window.confirm('구획 ' + list.length + '개를 클립으로 추가할까요?')) return;
+    addChapterClips(list.map(function (x, i) { return i; }));
   }
 
   // ---------- list ----------
@@ -538,6 +751,7 @@
   // ---------- playback ----------
   // auto === true when the app moves to the next clip by itself (keeps the fade-in running).
   function playClip(id, auto) {
+    if (id !== TEMP_ID) tempClip = null;
     var c = findClip(id);
     if (!c) return;
     if (!auto) cancelFades();
@@ -564,6 +778,14 @@
   }
 
   function goRelative(delta) {
+    if (tempClip) {
+      var chapters = chapterList(tempClip.videoId);
+      var ti = tempIndex() + delta;
+      if (ti < 0) { showMessage('첫 번째 구획입니다.', false); return; }
+      if (ti >= chapters.length) { showMessage('마지막 구획입니다.', false); return; }
+      playChapter(tempClip.videoId, ti, false);
+      return;
+    }
     if (!clips.length) return;
     var idx = indexOfClip(currentId);
     if (idx < 0) { playClip(clips[0].id); return; }
@@ -575,6 +797,20 @@
 
   // Move on to the next clip when a clip ends (auto-next), or stop after the last one.
   function advance() {
+    if (tempClip) {
+      var chapters = chapterList(tempClip.videoId);
+      var ti = tempIndex();
+      if (ti < 0 || ti + 1 >= chapters.length) {
+        player.pauseVideo();
+        cancelFades();
+        showMessage('마지막 구획까지 재생했습니다.', false);
+        return;
+      }
+      fadeOutActive = false;
+      startFadeIn();
+      playChapter(tempClip.videoId, ti + 1, true);
+      return;
+    }
     var idx = indexOfClip(currentId);
     var next = idx >= 0 && idx + 1 < clips.length ? clips[idx + 1] : null;
     if (!next) {
@@ -759,7 +995,7 @@
   $('cancel-btn').addEventListener('click', closeForm);
   $('form').addEventListener('submit', submitForm);
   $('overlay').addEventListener('click', function (ev) { if (ev.target === $('overlay')) closeForm(); });
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeForm(); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeForm(); closeChapters(); } });
   $('loop-btn').addEventListener('click', toggleLoop);
   $('a-btn').addEventListener('click', function () { setPoint('A'); });
   $('b-btn').addEventListener('click', function () { setPoint('B'); });
@@ -773,6 +1009,13 @@
   $('fadein-sel').addEventListener('change', function () {
     settings.fadeIn = parseInt(this.value, 10); saveSettings();
   });
+
+  $('ch-btn').addEventListener('click', openChapters);
+  $('ch-close').addEventListener('click', closeChapters);
+  $('ch-overlay').addEventListener('click', function (ev) { if (ev.target === $('ch-overlay')) closeChapters(); });
+  $('ch-make').addEventListener('click', makeChapters);
+  $('ch-clear').addEventListener('click', clearChapters);
+  $('ch-addall').addEventListener('click', addAllChapters);
 
   var bar = $('p-bar');
   bar.addEventListener('pointerdown', startDrag);
