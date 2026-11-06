@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<title>MR 플레이어</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #181b24; --line: #2a2f3d; --text: #e8eaf0; --muted: #9aa0b0;
+    --accent: #3ddc97; --accent-bg: #11241b; --danger: #ff7b7b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 12px 12px 110px; background: var(--bg); color: var(--text);
+         font-family: -apple-system, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; }
+  h1 { font-size: 16px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+  .player-wrap { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; }
+  .player-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .now { margin: 12px 2px 4px; }
+  .now-label { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .now-title { font-size: 18px; font-weight: 700; margin-top: 2px; word-break: break-all; }
+  .msg { margin: 8px 2px 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+  .msg.err { color: var(--danger); }
+  .msg a { color: var(--accent); }
+  .list { margin-top: 14px; }
+  .empty { display: none; padding: 28px 12px; text-align: center; color: var(--muted); line-height: 1.7; }
+  .card { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 14px; margin-bottom: 8px;
+          background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+  .card.active { border-color: var(--accent); background: var(--accent-bg); }
+  .card-main { flex: 1; min-width: 0; min-height: 52px; display: flex; flex-direction: column; justify-content: center; cursor: pointer; }
+  .card-title { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-time { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .small-btn { min-width: 48px; min-height: 48px; padding: 0 8px; background: none; border: 0; color: var(--muted); font-size: 14px; }
+  .small-btn.danger { color: var(--danger); }
+  .fab { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom));
+         min-height: 54px; padding: 0 26px; border: 0; border-radius: 28px; background: var(--accent); color: #0b1a12;
+         font-size: 16px; font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  .overlay { position: fixed; inset: 0; z-index: 10; display: none; align-items: flex-end; justify-content: center; background: rgba(0,0,0,.65); }
+  .overlay.open { display: flex; }
+  .sheet { width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; background: var(--card);
+           border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .sheet h2 { margin: 0 0 4px; font-size: 18px; }
+  label { display: block; margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
+  input { width: 100%; padding: 12px; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .form-err { min-height: 20px; margin-top: 10px; font-size: 14px; color: var(--danger); }
+  .actions { display: flex; gap: 10px; margin-top: 8px; }
+  .btn { flex: 1; min-height: 52px; border: 0; border-radius: 12px; font-size: 16px; font-weight: 700; }
+  .btn.primary { background: var(--accent); color: #0b1a12; }
+  .btn.ghost { background: var(--bg); color: var(--text); border: 1px solid var(--line); }
+</style>
+</head>
+<body>
+  <h1>MR 플레이어</h1>
+
+  <div class="player-wrap"><div id="player"></div></div>
+
+  <div class="now">
+    <div class="now-label">현재 재생 중</div>
+    <div class="now-title" id="now-title">재생 중인 클립이 없습니다</div>
+  </div>
+  <div class="msg" id="msg"></div>
+
+  <div class="list" id="list"></div>
+  <div class="empty" id="empty">클립이 없습니다.<br>아래 "+ 클립 추가"를 눌러 시작하세요.</div>
+
+  <button class="fab" id="add-btn" type="button">+ 클립 추가</button>
+
+  <div class="overlay" id="overlay">
+    <form class="sheet" id="form" autocomplete="off">
+      <h2 id="form-title">클립 추가</h2>
+      <label for="f-url">유튜브 주소</label>
+      <input id="f-url" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=...">
+      <label for="f-title">제목</label>
+      <input id="f-title" type="text" placeholder="예: 은혜 아니면 - 후렴">
+      <div class="row">
+        <div>
+          <label for="f-start">시작 시간</label>
+          <input id="f-start" type="text" inputmode="text" placeholder="0:00">
+        </div>
+        <div>
+          <label for="f-end">종료 시간 (선택)</label>
+          <input id="f-end" type="text" inputmode="text" placeholder="비워두면 끝까지">
+        </div>
+      </div>
+      <div class="hint">시간은 1:23 또는 83(초)처럼 입력하세요.</div>
+      <div class="form-err" id="form-err"></div>
+      <div class="actions">
+        <button class="btn ghost" id="cancel-btn" type="button">취소</button>
+        <button class="btn primary" type="submit">저장</button>
+      </div>
+    </form>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'mrp.clips.v1';
+  var clips = loadClips();
+  var currentId = null;
+  var player = null;
+  var playerReady = false;
+  var pendingPlayId = null;
+  var editingId = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  // ---------- storage ----------
+  function isValidClip(c) {
+    return c && typeof c.id === 'string' && typeof c.videoId === 'string' &&
+           typeof c.title === 'string' && typeof c.start === 'number';
+  }
+  function loadClips() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      var arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter(isValidClip) : [];
+    } catch (e) { return []; }
+  }
+  function saveClips() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(clips)); }
+    catch (e) { showMessage('저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.', true); }
+  }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function findClip(id) {
+    for (var i = 0; i < clips.length; i++) { if (clips[i].id === id) return clips[i]; }
+    return null;
+  }
+
+  // ---------- parsing / formatting ----------
+  function parseVideoId(input) {
+    input = (input || '').trim();
+    if (/^[\w-]{11}$/.test(input)) return input;
+    try {
+      var u = new URL(input);
+      var host = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
+      if (host === 'youtu.be') {
+        var id = u.pathname.slice(1).split('/')[0];
+        return /^[\w-]{11}$/.test(id) ? id : null;
+      }
+      if (host.slice(-11) === 'youtube.com') {
+        var v = u.searchParams.get('v');
+        if (v && /^[\w-]{11}$/.test(v)) return v;
+        var m = u.pathname.match(/^\/(shorts|embed|live)\/([\w-]{11})/);
+        if (m) return m[2];
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // Returns null for blank, NaN for invalid, otherwise seconds.
+  function parseTime(text) {
+    text = (text || '').trim();
+    if (!text) return null;
+    var parts = text.split(':');
+    if (parts.length > 3) return NaN;
+    var sec = 0;
+    for (var i = 0; i < parts.length; i++) {
+      if (!/^\d+(\.\d+)?$/.test(parts[i])) return NaN;
+      var n = parseFloat(parts[i]);
+      if (i > 0 && n >= 60) return NaN;
+      sec = sec * 60 + n;
+    }
+    return Math.floor(sec);
+  }
+
+  function pad(n) { return n < 10 ? '0' + n : String(n); }
+  function fmt(total) {
+    total = Math.max(0, Math.floor(total));
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = total % 60;
+    return h > 0 ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
+  }
+
+  // ---------- small DOM helpers ----------
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function showMessage(text, isError, link) {
+    var box = $('msg');
+    box.textContent = text;
+    box.className = 'msg' + (isError ? ' err' : '');
+    if (link) {
+      box.appendChild(document.createTextNode(' '));
+      var a = el('a', '', link.label);
+      a.href = link.href; a.target = '_blank'; a.rel = 'noopener';
+      box.appendChild(a);
+    }
+  }
+  function clearMessage() { showMessage('', false); }
+
+  // ---------- list ----------
+  function updateNow() {
+    var c = currentId ? findClip(currentId) : null;
+    $('now-title').textContent = c ? c.title : '재생 중인 클립이 없습니다';
+  }
+
+  function render() {
+    var list = $('list');
+    list.textContent = '';
+    $('empty').style.display = clips.length ? 'none' : 'block';
+
+    clips.forEach(function (c) {
+      var isActive = c.id === currentId;
+      var card = el('div', 'card' + (isActive ? ' active' : ''));
+
+      var main = el('div', 'card-main');
+      main.setAttribute('role', 'button');
+      main.tabIndex = 0;
+      main.appendChild(el('div', 'card-title', (isActive ? '▶ ' : '') + c.title));
+      main.appendChild(el('div', 'card-time',
+        fmt(c.start) + ' ~ ' + (typeof c.end === 'number' ? fmt(c.end) : '끝까지')));
+      main.addEventListener('click', function () { playClip(c.id); });
+      main.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); playClip(c.id); }
+      });
+
+      var edit = el('button', 'small-btn', '수정');
+      edit.type = 'button';
+      edit.addEventListener('click', function () { openForm(c.id); });
+
+      var del = el('button', 'small-btn danger', '삭제');
+      del.type = 'button';
+      del.addEventListener('click', function () { deleteClip(c.id); });
+
+      card.appendChild(main);
+      card.appendChild(edit);
+      card.appendChild(del);
+      list.appendChild(card);
+    });
+  }
+
+  // ---------- playback ----------
+  function playClip(id) {
+    var c = findClip(id);
+    if (!c) return;
+    currentId = id;
+    clearMessage();
+    render();
+    updateNow();
+    if (!playerReady) {
+      pendingPlayId = id;
+      showMessage('유튜브 플레이어를 불러오는 중입니다...', false);
+      return;
+    }
+    var opts = { videoId: c.videoId, startSeconds: c.start };
+    if (typeof c.end === 'number') opts.endSeconds = c.end;
+    player.loadVideoById(opts);
+  }
+
+  function onPlayerReady() {
+    playerReady = true;
+    if (pendingPlayId) {
+      var id = pendingPlayId;
+      pendingPlayId = null;
+      playClip(id);
+    }
+  }
+
+  function onPlayerError(e) {
+    var code = e && e.data;
+    var c = currentId ? findClip(currentId) : null;
+    if (code === 101 || code === 150) {
+      var link = null;
+      if (c) {
+        link = { label: 'YouTube에서 열기',
+                 href: 'https://www.youtube.com/watch?v=' + c.videoId + '&t=' + c.start + 's' };
+      }
+      showMessage('이 영상은 소유자가 외부 재생을 막아 두었습니다.', true, link);
+    } else if (code === 100) {
+      showMessage('영상을 찾을 수 없거나 비공개 영상입니다.', true);
+    } else if (code === 153) {
+      showMessage('사이트 주소 확인에 실패해 재생할 수 없습니다. 올린 주소(https://...)로 열어 주세요.', true);
+    } else {
+      showMessage('재생 오류가 발생했습니다. (코드 ' + code + ')', true);
+    }
+  }
+
+  window.onYouTubeIframeAPIReady = function () {
+    player = new YT.Player('player', {
+      width: '100%',
+      height: '100%',
+      playerVars: { playsinline: 1, rel: 0 },
+      events: { onReady: onPlayerReady, onError: onPlayerError }
+    });
+  };
+
+  function loadYouTubeApi() {
+    var s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    s.onerror = function () {
+      showMessage('유튜브 플레이어를 불러오지 못했습니다. 인터넷 연결을 확인하세요.', true);
+    };
+    document.head.appendChild(s);
+  }
+
+  // ---------- add / edit / delete ----------
+  function openForm(id) {
+    editingId = id || null;
+    var c = id ? findClip(id) : null;
+    $('form-title').textContent = c ? '클립 수정' : '클립 추가';
+    $('f-url').value = c ? 'https://www.youtube.com/watch?v=' + c.videoId : '';
+    $('f-title').value = c ? c.title : '';
+    $('f-start').value = c ? fmt(c.start) : '';
+    $('f-end').value = c && typeof c.end === 'number' ? fmt(c.end) : '';
+    $('form-err').textContent = '';
+    $('overlay').classList.add('open');
+    $('f-url').focus();
+  }
+  function closeForm() {
+    $('overlay').classList.remove('open');
+    editingId = null;
+  }
+  function formError(text) { $('form-err').textContent = text; }
+
+  function submitForm(ev) {
+    ev.preventDefault();
+    var videoId = parseVideoId($('f-url').value);
+    if (!videoId) { formError('유튜브 주소를 확인하세요.'); return; }
+
+    var start = parseTime($('f-start').value);
+    if (start !== null && isNaN(start)) { formError('시작 시간은 1:23 또는 83처럼 입력하세요.'); return; }
+    if (start === null) start = 0;
+
+    var end = parseTime($('f-end').value);
+    if (end !== null && isNaN(end)) { formError('종료 시간은 1:23 또는 83처럼 입력하세요.'); return; }
+    if (end !== null && end <= start) { formError('종료 시간은 시작 시간보다 커야 합니다.'); return; }
+
+    var title = $('f-title').value.trim() || '제목 없음';
+
+    if (editingId) {
+      var c = findClip(editingId);
+      if (c) { c.videoId = videoId; c.title = title; c.start = start; c.end = end; }
+    } else {
+      clips.push({ id: uid(), videoId: videoId, title: title, start: start, end: end });
+    }
+    saveClips();
+    closeForm();
+    render();
+    updateNow();
+  }
+
+  function deleteClip(id) {
+    var c = findClip(id);
+    if (!c) return;
+    if (!window.confirm('"' + c.title + '" 클립을 삭제할까요?')) return;
+    clips = clips.filter(function (x) { return x.id !== id; });
+    if (currentId === id) {
+      currentId = null;
+      if (playerReady) player.stopVideo();
+    }
+    saveClips();
+    render();
+    updateNow();
+  }
+
+  // ---------- wiring ----------
+  $('add-btn').addEventListener('click', function () { openForm(null); });
+  $('cancel-btn').addEventListener('click', closeForm);
+  $('form').addEventListener('submit', submitForm);
+  $('overlay').addEventListener('click', function (ev) { if (ev.target === $('overlay')) closeForm(); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeForm(); });
+
+  render();
+  updateNow();
+  loadYouTubeApi();
+})();
+</script>
+</body>
+</html>
