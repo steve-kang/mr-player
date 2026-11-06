@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f1117">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MR 플레이어">
 <title>MR 플레이어</title>
 <style>
   :root {
@@ -24,6 +29,12 @@
   .p-fill { position: absolute; left: 0; top: 50%; height: 6px; margin-top: -3px; width: 0; background: var(--accent); border-radius: 3px; }
   .p-knob { position: absolute; left: 0; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
 
+  .sticky-top { position: sticky; top: 0; z-index: 5; margin: 0 -12px; padding: 4px 12px 2px; background: var(--bg);
+                box-shadow: 0 6px 8px -6px rgba(0,0,0,.7); }
+  @media (max-height: 520px) { .sticky-top { position: static; box-shadow: none; } }
+  .backup { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .backup .row { display: flex; gap: 8px; margin-top: 8px; }
+  .backup .btn { flex: 1; min-height: 48px; font-size: 14px; }
   .now { margin: 4px 2px 4px; }
   .now-label { font-size: 12px; color: var(--accent); font-weight: 600; }
   .now-title { font-size: 18px; font-weight: 700; margin-top: 2px; word-break: break-all; }
@@ -33,7 +44,7 @@
 
   .controls { margin-top: 10px; }
   .chips { display: flex; gap: 6px; }
-  .chip { flex: 1; min-height: 46px; padding: 0 4px; font-size: 14px; font-weight: 600; color: var(--text);
+  .chip { flex: 1; min-height: 48px; padding: 0 4px; font-size: 14px; font-weight: 600; color: var(--text);
           background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
   .chip.active { background: var(--accent); border-color: var(--accent); color: #0b1a12; }
   .loop-row, .nav-row, .auto-row { display: flex; gap: 8px; margin-top: 8px; align-items: stretch; }
@@ -41,7 +52,7 @@
   .nav-row .chip { min-height: 52px; font-size: 15px; }
   .auto-row .chip { flex: 1.5; }
   .sel { flex: 1; display: flex; flex-direction: column; justify-content: center; margin: 0; font-size: 11px; color: var(--muted); }
-  .sel select { margin-top: 2px; min-height: 36px; padding: 0 6px; font-size: 14px; color: var(--text);
+  .sel select { margin-top: 2px; min-height: 44px; padding: 0 6px; font-size: 14px; color: var(--text);
                 background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
   .ab-info { margin: 8px 2px 0; font-size: 13px; color: var(--muted); }
   .note { margin: 6px 2px 0; font-size: 12px; color: var(--muted); }
@@ -96,6 +107,7 @@
 <body>
   <h1>MR 플레이어</h1>
 
+  <div class="sticky-top" id="sticky-top">
   <div class="player-wrap"><div id="player"></div></div>
 
   <div class="progress">
@@ -113,6 +125,7 @@
       <button class="link-btn" id="ch-btn" type="button">구획</button>
     </div>
     <div class="now-title" id="now-title">재생 중인 클립이 없습니다</div>
+  </div>
   </div>
   <div class="msg" id="msg"></div>
 
@@ -135,6 +148,7 @@
       <label class="sel">페이드 인<select id="fadein-sel"></select></label>
     </div>
     <div class="note">iPhone에서는 볼륨 페이드가 적용되지 않을 수 있습니다.</div>
+    <div class="auto-row"><button class="chip" id="wake-btn" type="button">화면 켜두기 꺼짐</button></div>
   </div>
 
   <div class="list-head" id="list-head">
@@ -143,6 +157,16 @@
   </div>
   <div id="list"></div>
   <div class="empty" id="empty">클립이 없습니다.<br>아래 "+ 클립 추가"를 눌러 시작하세요.</div>
+
+  <div class="backup">
+    <div class="note">백업 — 폰을 바꾸거나 브라우저 데이터를 지우기 전에 저장해 두세요. (클립·구획·설정)</div>
+    <div class="row">
+      <button class="btn ghost" id="export-btn" type="button">백업 파일 저장</button>
+      <button class="btn ghost" id="import-btn" type="button">백업 파일 불러오기</button>
+    </div>
+    <input type="file" id="import-file" accept=".json,application/json" style="display:none">
+    <div class="msg" id="backup-msg"></div>
+  </div>
 
   <button class="fab" id="add-btn" type="button">+ 클립 추가</button>
 
@@ -245,12 +269,13 @@
     catch (e) { showMessage('저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.', true); }
   }
   function loadSettings() {
-    var s = { rate: 1, loop: false, autoNext: false, fadeOut: 2, fadeIn: 2 };
+    var s = { rate: 1, loop: false, autoNext: false, fadeOut: 2, fadeIn: 2, wake: false };
     try {
       var o = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
       if (RATES.indexOf(o.rate) >= 0) s.rate = o.rate;
       s.loop = o.loop === true;
       s.autoNext = o.autoNext === true;
+      s.wake = o.wake === true;
       if (FADES.indexOf(o.fadeOut) >= 0) s.fadeOut = o.fadeOut;
       if (FADES.indexOf(o.fadeIn) >= 0) s.fadeIn = o.fadeIn;
     } catch (e) {}
@@ -990,6 +1015,108 @@
     updateNow();
   }
 
+  // ---------- keep screen on ----------
+  var wakeSentinel = null;
+  var wakeSupported = !!(navigator.wakeLock && navigator.wakeLock.request);
+
+  function renderWake() {
+    var b = $('wake-btn');
+    if (!wakeSupported) { b.textContent = '화면 켜두기 (지원 안 됨)'; b.disabled = true; b.classList.remove('active'); return; }
+    b.textContent = '화면 켜두기 ' + (settings.wake ? '켜짐' : '꺼짐');
+    b.classList.toggle('active', settings.wake);
+  }
+  function acquireWake() {
+    if (!wakeSupported || !settings.wake || wakeSentinel) return;
+    try {
+      navigator.wakeLock.request('screen').then(function (sent) {
+        wakeSentinel = sent;
+        sent.addEventListener('release', function () { wakeSentinel = null; });
+      }, function () { wakeSentinel = null; });
+    } catch (e) { wakeSentinel = null; }
+  }
+  function releaseWake() {
+    if (wakeSentinel) { try { wakeSentinel.release(); } catch (e) {} wakeSentinel = null; }
+  }
+  function toggleWake() {
+    settings.wake = !settings.wake;
+    saveSettings();
+    if (settings.wake) acquireWake(); else releaseWake();
+    renderWake();
+  }
+
+  // ---------- backup ----------
+  function setBackupMsg(text, isError) {
+    var box = $('backup-msg');
+    box.textContent = text;
+    box.className = 'msg' + (isError ? ' err' : '');
+  }
+
+  function exportBackup() {
+    var data = { app: 'mr-player', version: 1, savedAt: new Date().toISOString(),
+                 clips: clips, chapters: chapterStore, settings: settings };
+    var d = new Date();
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var name = 'mr-player-backup-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '.json';
+    try {
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      setBackupMsg('백업 파일을 저장했습니다: ' + name + ' (다운로드 폴더/파일 앱을 확인하세요)', false);
+    } catch (e) {
+      setBackupMsg('백업 파일을 만들지 못했습니다.', true);
+    }
+  }
+
+  // Accepts our own backup, or a plain array of clips (e.g. exported from the older app).
+  function applyBackup(text) {
+    var data;
+    try { data = JSON.parse(text); } catch (e) { setBackupMsg('올바른 백업 파일이 아닙니다.', true); return; }
+    var newClips = Array.isArray(data) ? data : (data && Array.isArray(data.clips) ? data.clips : null);
+    if (!newClips) { setBackupMsg('클립 정보가 들어 있는 백업 파일이 아닙니다.', true); return; }
+    newClips = newClips.filter(isValidClip);
+    var newChapters = {};
+    if (data && !Array.isArray(data) && data.chapters && typeof data.chapters === 'object') {
+      Object.keys(data.chapters).forEach(function (k) {
+        if (!Array.isArray(data.chapters[k])) return;
+        var list = data.chapters[k].filter(function (x) { return x && typeof x.t === 'number' && typeof x.title === 'string'; });
+        if (list.length) newChapters[k] = list;
+      });
+    }
+    if (!window.confirm('지금 저장된 클립 ' + clips.length + '개를 지우고, 백업 파일의 클립 ' + newClips.length + '개로 바꿀까요?')) {
+      setBackupMsg('불러오기를 취소했습니다.', false);
+      return;
+    }
+    cancelFades();
+    if (playerReady && currentId) { try { player.stopVideo(); } catch (e) {} }
+    currentId = null; tempClip = null; loadedVideoId = null;
+    clips = newClips;
+    chapterStore = newChapters;
+    if (data && !Array.isArray(data) && data.settings && typeof data.settings === 'object') {
+      var o = data.settings;
+      if (RATES.indexOf(o.rate) >= 0) settings.rate = o.rate;
+      settings.loop = o.loop === true;
+      settings.autoNext = o.autoNext === true;
+      if (FADES.indexOf(o.fadeOut) >= 0) settings.fadeOut = o.fadeOut;
+      if (FADES.indexOf(o.fadeIn) >= 0) settings.fadeIn = o.fadeIn;
+    }
+    saveClips(); saveChapters(); saveSettings();
+    renderControls(); renderWake(); render(); updateNow();
+    setBackupMsg('클립 ' + newClips.length + '개를 불러왔습니다.', false);
+  }
+
+  function importBackup(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () { applyBackup(String(reader.result)); };
+    reader.onerror = function () { setBackupMsg('파일을 읽지 못했습니다.', true); };
+    reader.readAsText(file);
+  }
+
   // ---------- wiring ----------
   $('add-btn').addEventListener('click', function () { openForm(null); });
   $('cancel-btn').addEventListener('click', closeForm);
@@ -1017,6 +1144,14 @@
   $('ch-clear').addEventListener('click', clearChapters);
   $('ch-addall').addEventListener('click', addAllChapters);
 
+  $('wake-btn').addEventListener('click', toggleWake);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') acquireWake();
+  });
+  $('export-btn').addEventListener('click', exportBackup);
+  $('import-btn').addEventListener('click', function () { $('import-file').value = ''; $('import-file').click(); });
+  $('import-file').addEventListener('change', function () { importBackup(this.files && this.files[0]); });
+
   var bar = $('p-bar');
   bar.addEventListener('pointerdown', startDrag);
   bar.addEventListener('pointermove', function (ev) { if (dragging) previewDrag(ev); });
@@ -1024,6 +1159,7 @@
   bar.addEventListener('pointercancel', function () { endDrag(false); });
 
   renderControls();
+  renderWake();
   render();
   updateNow();
   loadYouTubeApi();
