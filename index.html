@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MR Player - Connection Test</title>
+<style>
+  body { margin: 0; padding: 16px; background: #0f1117; color: #e8eaf0; font-family: -apple-system, "Noto Sans KR", sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  .note { font-size: 13px; color: #9aa0b0; margin: 0 0 16px; line-height: 1.5; }
+  .player-wrap { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
+  .player-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
+  label { display: block; font-size: 13px; color: #9aa0b0; margin: 12px 0 6px; }
+  input { width: 100%; box-sizing: border-box; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #2a2f3d; background: #181b24; color: #e8eaf0; }
+  button { width: 100%; margin-top: 16px; min-height: 48px; font-size: 16px; font-weight: 600; border: 0; border-radius: 10px; background: #3ddc97; color: #0b1a12; }
+  .box { margin-top: 16px; padding: 12px; border-radius: 8px; background: #181b24; font-size: 14px; line-height: 1.6; word-break: break-all; }
+  .err { color: #ff7b7b; }
+  .warn { color: #ffd166; }
+</style>
+</head>
+<body>
+  <h1>MR 플레이어 연결 확인</h1>
+  <p class="note">올린 주소에서 유튜브 영상이 재생되는지 확인하는 임시 페이지입니다. 다음 단계에서 본 앱으로 교체됩니다.</p>
+
+  <div class="player-wrap"><div id="player"></div></div>
+
+  <label for="url">유튜브 주소</label>
+  <input id="url" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=...">
+
+  <label for="start">시작 시간 (예: 1:23 또는 83)</label>
+  <input id="start" type="text" inputmode="text" value="0">
+
+  <button id="go" type="button">재생</button>
+
+  <div class="box">
+    <div id="status">상태: 대기 중</div>
+    <div id="error" class="err"></div>
+    <div id="where"></div>
+  </div>
+
+<script>
+  var player = null;
+  var apiReady = false;
+  var pending = null;
+
+  function setStatus(text) { document.getElementById('status').textContent = '상태: ' + text; }
+  function setError(text) { document.getElementById('error').textContent = text || ''; }
+
+  // Show where this page is running; the YouTube player needs a real web address.
+  (function () {
+    var where = document.getElementById('where');
+    if (location.protocol === 'file:') {
+      where.className = 'warn';
+      where.textContent = '주의: 파일로 직접 열면 유튜브 재생이 막힐 수 있습니다. 올린 주소(https://...)로 여세요.';
+    } else {
+      where.textContent = '이 페이지 주소: ' + location.origin;
+    }
+  })();
+
+  function parseVideoId(input) {
+    input = (input || '').trim();
+    if (/^[\w-]{11}$/.test(input)) return input;
+    try {
+      var u = new URL(input);
+      var host = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
+      if (host === 'youtu.be') return u.pathname.slice(1).split('/')[0] || null;
+      if (host.slice(-11) === 'youtube.com') {
+        if (u.searchParams.get('v')) return u.searchParams.get('v');
+        var m = u.pathname.match(/^\/(shorts|embed|live)\/([\w-]{11})/);
+        if (m) return m[2];
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function parseTime(text) {
+    text = (text || '').trim();
+    if (!text) return 0;
+    var parts = text.split(':').map(Number);
+    for (var i = 0; i < parts.length; i++) { if (isNaN(parts[i])) return null; }
+    var sec = 0;
+    parts.forEach(function (p) { sec = sec * 60 + p; });
+    return sec;
+  }
+
+  var STATE_NAMES = { '-1': '시작 전', '0': '끝남', '1': '재생 중', '2': '일시정지', '3': '버퍼링', '5': '준비됨' };
+
+  var ERROR_TEXT = {
+    2: '잘못된 영상 정보입니다. 주소를 확인하세요.',
+    5: '플레이어 오류입니다. 다시 시도해 보세요.',
+    100: '영상을 찾을 수 없거나 비공개입니다.',
+    101: '이 영상은 소유자가 외부 재생을 막아 두었습니다.',
+    150: '이 영상은 소유자가 외부 재생을 막아 두었습니다.',
+    153: '사이트 주소(Referer) 정보가 없어 재생이 거부되었습니다.'
+  };
+
+  function load(id, start) {
+    setError('');
+    if (!player) {
+      player = new YT.Player('player', {
+        videoId: id,
+        playerVars: { playsinline: 1, rel: 0, start: start },
+        events: {
+          onReady: function (e) { setStatus('플레이어 준비됨'); e.target.playVideo(); },
+          onStateChange: function (e) { setStatus(STATE_NAMES[String(e.data)] || String(e.data)); },
+          onError: function (e) { setError('오류 ' + e.data + ': ' + (ERROR_TEXT[e.data] || '알 수 없는 오류')); }
+        }
+      });
+    } else {
+      player.loadVideoById({ videoId: id, startSeconds: start });
+    }
+  }
+
+  function onYouTubeIframeAPIReady() {
+    apiReady = true;
+    if (pending) { load(pending.id, pending.start); pending = null; }
+  }
+
+  document.getElementById('go').addEventListener('click', function () {
+    var id = parseVideoId(document.getElementById('url').value);
+    var start = parseTime(document.getElementById('start').value);
+    if (!id) { setError('유튜브 주소를 확인하세요.'); return; }
+    if (start === null) { setError('시작 시간은 1:23 또는 83처럼 입력하세요.'); return; }
+    if (!apiReady) { pending = { id: id, start: start }; setStatus('유튜브 플레이어를 불러오는 중...'); return; }
+    load(id, start);
+  });
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>
