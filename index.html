@@ -19,10 +19,23 @@
   .now { margin: 12px 2px 4px; }
   .now-label { font-size: 12px; color: var(--accent); font-weight: 600; }
   .now-title { font-size: 18px; font-weight: 700; margin-top: 2px; word-break: break-all; }
-  .msg { margin: 8px 2px 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+  .msg { margin: 8px 2px 0; font-size: 14px; line-height: 1.5; color: var(--muted); min-height: 21px; }
   .msg.err { color: var(--danger); }
   .msg a { color: var(--accent); }
-  .list { margin-top: 14px; }
+
+  .controls { margin-top: 10px; }
+  .chips { display: flex; gap: 6px; }
+  .chip { flex: 1; min-height: 46px; padding: 0 4px; font-size: 14px; font-weight: 600; color: var(--text);
+          background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #0b1a12; }
+  .loop-row { display: flex; gap: 8px; margin-top: 8px; }
+  .loop-row .chip { flex: 1; }
+  .loop-row .chip.wide { flex: 1.6; }
+  .ab-info { margin: 8px 2px 0; font-size: 13px; color: var(--muted); }
+
+  .list-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 2px 8px; }
+  .list-head span { font-size: 13px; color: var(--muted); font-weight: 600; }
+  .link-btn { min-height: 44px; padding: 0 10px; background: none; border: 0; color: var(--accent); font-size: 14px; font-weight: 600; }
   .empty { display: none; padding: 28px 12px; text-align: center; color: var(--muted); line-height: 1.7; }
   .card { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 14px; margin-bottom: 8px;
           background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
@@ -32,6 +45,8 @@
   .card-time { font-size: 13px; color: var(--muted); margin-top: 2px; }
   .small-btn { min-width: 48px; min-height: 48px; padding: 0 8px; background: none; border: 0; color: var(--muted); font-size: 14px; }
   .small-btn.danger { color: var(--danger); }
+  .small-btn.move { font-size: 18px; color: var(--text); }
+  .small-btn:disabled { opacity: .25; }
   .fab { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom));
          min-height: 54px; padding: 0 26px; border: 0; border-radius: 28px; background: var(--accent); color: #0b1a12;
          font-size: 16px; font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
@@ -63,7 +78,21 @@
   </div>
   <div class="msg" id="msg"></div>
 
-  <div class="list" id="list"></div>
+  <div class="controls">
+    <div class="chips" id="speed-row"></div>
+    <div class="loop-row">
+      <button class="chip wide" id="loop-btn" type="button">구간 반복</button>
+      <button class="chip" id="a-btn" type="button">A 지정</button>
+      <button class="chip" id="b-btn" type="button">B 지정</button>
+    </div>
+    <div class="ab-info" id="ab-info"></div>
+  </div>
+
+  <div class="list-head" id="list-head">
+    <span>클립 목록</span>
+    <button class="link-btn" id="reorder-btn" type="button">순서 변경</button>
+  </div>
+  <div id="list"></div>
   <div class="empty" id="empty">클립이 없습니다.<br>아래 "+ 클립 추가"를 눌러 시작하세요.</div>
 
   <button class="fab" id="add-btn" type="button">+ 클립 추가</button>
@@ -99,12 +128,19 @@
   'use strict';
 
   var STORAGE_KEY = 'mrp.clips.v1';
+  var SETTINGS_KEY = 'mrp.settings.v1';
+  var RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
   var clips = loadClips();
+  var settings = loadSettings();
   var currentId = null;
+  var loadedVideoId = null;   // the video currently loaded in the player
   var player = null;
   var playerReady = false;
   var pendingPlayId = null;
   var editingId = null;
+  var reorderMode = false;
+  var guardUntil = 0;         // ignore end-of-clip checks right after a seek
 
   function $(id) { return document.getElementById(id); }
 
@@ -123,6 +159,18 @@
   function saveClips() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(clips)); }
     catch (e) { showMessage('저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.', true); }
+  }
+  function loadSettings() {
+    var s = { rate: 1, loop: false };
+    try {
+      var o = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      if (RATES.indexOf(o.rate) >= 0) s.rate = o.rate;
+      s.loop = o.loop === true;
+    } catch (e) {}
+    return s;
+  }
+  function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
   }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function findClip(id) {
@@ -196,18 +244,83 @@
   }
   function clearMessage() { showMessage('', false); }
 
+  // ---------- controls (speed, loop, A/B) ----------
+  function renderControls() {
+    var row = $('speed-row');
+    row.textContent = '';
+    RATES.forEach(function (r) {
+      var b = el('button', 'chip' + (r === settings.rate ? ' active' : ''), r + 'x');
+      b.type = 'button';
+      b.addEventListener('click', function () { setRate(r); });
+      row.appendChild(b);
+    });
+    var loopBtn = $('loop-btn');
+    loopBtn.textContent = settings.loop ? '구간 반복 켜짐' : '구간 반복';
+    loopBtn.className = 'chip wide' + (settings.loop ? ' active' : '');
+    updateAbInfo();
+  }
+
+  function updateAbInfo() {
+    var c = currentId ? findClip(currentId) : null;
+    if (!c) { $('ab-info').textContent = ''; return; }
+    $('ab-info').textContent = 'A ' + fmt(c.start) + ' · B ' +
+      (typeof c.end === 'number' ? fmt(c.end) : '끝') + '   현재 속도 ' + settings.rate + 'x';
+  }
+
+  function setRate(r) {
+    settings.rate = r;
+    saveSettings();
+    if (playerReady) player.setPlaybackRate(r);
+    renderControls();
+  }
+
+  function toggleLoop() {
+    settings.loop = !settings.loop;
+    saveSettings();
+    renderControls();
+  }
+
+  function setPoint(which) {
+    var c = currentId ? findClip(currentId) : null;
+    if (!c || !playerReady) { showMessage('먼저 클립을 재생하세요.', true); return; }
+    var t = Math.floor(player.getCurrentTime());
+    if (which === 'A') {
+      if (typeof c.end === 'number' && t >= c.end) { showMessage('A는 B보다 앞이어야 합니다.', true); return; }
+      c.start = t;
+    } else {
+      if (t <= c.start) { showMessage('B는 A보다 뒤여야 합니다.', true); return; }
+      c.end = t;
+    }
+    saveClips();
+    render();
+    updateAbInfo();
+    showMessage(which + ' 지점을 ' + fmt(t) + '로 지정했습니다.', false);
+  }
+
   // ---------- list ----------
   function updateNow() {
     var c = currentId ? findClip(currentId) : null;
     $('now-title').textContent = c ? c.title : '재생 중인 클립이 없습니다';
+    updateAbInfo();
+  }
+
+  function moveClip(index, delta) {
+    var to = index + delta;
+    if (to < 0 || to >= clips.length) return;
+    var item = clips.splice(index, 1)[0];
+    clips.splice(to, 0, item);
+    saveClips();
+    render();
   }
 
   function render() {
     var list = $('list');
     list.textContent = '';
     $('empty').style.display = clips.length ? 'none' : 'block';
+    $('list-head').style.display = clips.length ? 'flex' : 'none';
+    $('reorder-btn').textContent = reorderMode ? '완료' : '순서 변경';
 
-    clips.forEach(function (c) {
+    clips.forEach(function (c, index) {
       var isActive = c.id === currentId;
       var card = el('div', 'card' + (isActive ? ' active' : ''));
 
@@ -221,18 +334,31 @@
       main.addEventListener('keydown', function (ev) {
         if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); playClip(c.id); }
       });
-
-      var edit = el('button', 'small-btn', '수정');
-      edit.type = 'button';
-      edit.addEventListener('click', function () { openForm(c.id); });
-
-      var del = el('button', 'small-btn danger', '삭제');
-      del.type = 'button';
-      del.addEventListener('click', function () { deleteClip(c.id); });
-
       card.appendChild(main);
-      card.appendChild(edit);
-      card.appendChild(del);
+
+      if (reorderMode) {
+        var up = el('button', 'small-btn move', '▲');
+        up.type = 'button';
+        up.setAttribute('aria-label', '위로');
+        up.disabled = index === 0;
+        up.addEventListener('click', function () { moveClip(index, -1); });
+        var down = el('button', 'small-btn move', '▼');
+        down.type = 'button';
+        down.setAttribute('aria-label', '아래로');
+        down.disabled = index === clips.length - 1;
+        down.addEventListener('click', function () { moveClip(index, 1); });
+        card.appendChild(up);
+        card.appendChild(down);
+      } else {
+        var edit = el('button', 'small-btn', '수정');
+        edit.type = 'button';
+        edit.addEventListener('click', function () { openForm(c.id); });
+        var del = el('button', 'small-btn danger', '삭제');
+        del.type = 'button';
+        del.addEventListener('click', function () { deleteClip(c.id); });
+        card.appendChild(edit);
+        card.appendChild(del);
+      }
       list.appendChild(card);
     });
   }
@@ -250,13 +376,23 @@
       showMessage('유튜브 플레이어를 불러오는 중입니다...', false);
       return;
     }
-    var opts = { videoId: c.videoId, startSeconds: c.start };
-    if (typeof c.end === 'number') opts.endSeconds = c.end;
-    player.loadVideoById(opts);
+    // Same video already loaded: jump inside it instead of reloading.
+    // (Reloading a video is what makes YouTube show a new ad.)
+    var st = player.getPlayerState();
+    if (loadedVideoId === c.videoId && (st === 0 || st === 1 || st === 2 || st === 3)) {
+      player.seekTo(c.start, true);
+      player.playVideo();
+    } else {
+      loadedVideoId = c.videoId;
+      player.loadVideoById({ videoId: c.videoId, startSeconds: c.start });
+    }
+    guardUntil = Date.now() + 800;
   }
 
   function onPlayerReady() {
     playerReady = true;
+    player.setPlaybackRate(settings.rate);
+    setInterval(tick, 150);
     if (pendingPlayId) {
       var id = pendingPlayId;
       pendingPlayId = null;
@@ -264,9 +400,39 @@
     }
   }
 
+  // Runs often while a clip plays: enforces the clip's end time (stop or loop).
+  function tick() {
+    if (!playerReady || !currentId || Date.now() < guardUntil) return;
+    var c = findClip(currentId);
+    if (!c || typeof c.end !== 'number') return;
+    if (player.getPlayerState() !== 1) return;
+    var t = player.getCurrentTime();
+    // Only act just after the end point; if the user scrubbed far past it, leave them be.
+    if (t >= c.end && t < c.end + 2) {
+      guardUntil = Date.now() + 600;
+      if (settings.loop) player.seekTo(c.start, true);
+      else player.pauseVideo();
+    }
+  }
+
+  function onPlayerStateChange(e) {
+    if (e.data === 1) {
+      if (player.getPlaybackRate() !== settings.rate) player.setPlaybackRate(settings.rate);
+    } else if (e.data === 0) {
+      // Video reached its very end (clips without an end time, or a clip ending at the video end).
+      var c = currentId ? findClip(currentId) : null;
+      if (c && settings.loop) {
+        guardUntil = Date.now() + 600;
+        player.seekTo(c.start, true);
+        player.playVideo();
+      }
+    }
+  }
+
   function onPlayerError(e) {
     var code = e && e.data;
     var c = currentId ? findClip(currentId) : null;
+    loadedVideoId = null;
     if (code === 101 || code === 150) {
       var link = null;
       if (c) {
@@ -288,7 +454,7 @@
       width: '100%',
       height: '100%',
       playerVars: { playsinline: 1, rel: 0 },
-      events: { onReady: onPlayerReady, onError: onPlayerError }
+      events: { onReady: onPlayerReady, onStateChange: onPlayerStateChange, onError: onPlayerError }
     });
   };
 
@@ -354,6 +520,7 @@
     clips = clips.filter(function (x) { return x.id !== id; });
     if (currentId === id) {
       currentId = null;
+      loadedVideoId = null;
       if (playerReady) player.stopVideo();
     }
     saveClips();
@@ -367,7 +534,12 @@
   $('form').addEventListener('submit', submitForm);
   $('overlay').addEventListener('click', function (ev) { if (ev.target === $('overlay')) closeForm(); });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeForm(); });
+  $('loop-btn').addEventListener('click', toggleLoop);
+  $('a-btn').addEventListener('click', function () { setPoint('A'); });
+  $('b-btn').addEventListener('click', function () { setPoint('B'); });
+  $('reorder-btn').addEventListener('click', function () { reorderMode = !reorderMode; render(); });
 
+  renderControls();
   render();
   updateNow();
   loadYouTubeApi();
