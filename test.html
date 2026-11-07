@@ -22,6 +22,8 @@
 <label>영상 2 주소 <input id="u2" type="url" placeholder="https://www.youtube.com/watch?v=..."></label>
 <label>시작 초 (두 영상 공통) <input id="st" type="number" value="30"></label>
 <label>끝 초 (두 영상 공통) <input id="en" type="number" value="90"></label>
+<button id="auto" type="button" style="background:#ffd866">자동 시험 시작 (약 6분, 화면을 켠 채로 두세요)</button>
+<div id="summary" style="margin:10px 0;font-size:14px;line-height:1.7"></div>
 <div id="opts" style="margin:10px 0;padding:10px;border:1px solid #2a2f3d;border-radius:10px">
   <div style="font-size:13px;color:#9aa0b0;margin-bottom:6px">스위치 (처음에는 모두 꺼 두세요. 하나씩 켜면서 시험합니다)</div>
   <label><input type="checkbox" id="o-end" style="width:auto;min-height:0;margin:0 8px 0 0"> 끝 시각을 YouTube에 전달 (endSeconds)</label>
@@ -72,15 +74,67 @@
     });
   };
   var pollTimer = null;
-  $('o-poll').addEventListener('change', function () {
+  function setPoll(on) {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    if (this.checked) {
+    if (on) {
       pollTimer = setInterval(function () {
         if (!ready) return;
         player.getCurrentTime(); player.getPlayerState(); player.getDuration();
       }, 150);
     }
-  });
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // Watches ~10s after a load. Ad suspected if the playhead sits far before the start point.
+  async function watch(start) {
+    var adSamples = 0, raw = [];
+    for (var i = 0; i < 20; i++) {
+      await sleep(500);
+      var st = player.getPlayerState(), ct = player.getCurrentTime() || 0;
+      raw.push(Math.round(ct));
+      if (i >= 3 && (st === 1 || st === 3 || st === -1) && ct < start - 3) adSamples++;
+    }
+    return { ad: adSamples >= 2, raw: raw.join(',') };
+  }
+
+  var running = false;
+  async function autoTest() {
+    if (running) return;
+    if (!vid($('u1').value) || !vid($('u2').value)) { log('영상 1, 2 주소를 먼저 넣으세요.'); return; }
+    if (!ready) { log('플레이어가 아직 준비되지 않았습니다. 잠시 후 다시 누르세요.'); return; }
+    running = true;
+    $('auto').disabled = true;
+    var start = Number($('st').value) || 0;
+    var configs = [
+      ['모두 끔', {}], ['끝 시각 전달', { end: 1 }], ['위치 읽기', { poll: 1 }],
+      ['볼륨 설정', { vol: 1 }], ['속도 설정', { rate: 1 }], ['모두 켬', { end: 1, poll: 1, vol: 1, rate: 1 }]
+    ];
+    var rows = [];
+    var N = 5;
+    for (var c = 0; c < configs.length; c++) {
+      var cfg = configs[c][1];
+      $('o-end').checked = !!cfg.end; $('o-vol').checked = !!cfg.vol; $('o-rate').checked = !!cfg.rate; $('o-poll').checked = !!cfg.poll;
+      setPoll(!!cfg.poll);
+      var ads = 0, raws = [];
+      for (var i = 0; i < N; i++) {
+        $('summary').innerHTML = rows.join('<br>') + '<br>시험 중: ' + configs[c][0] + ' (' + (i + 1) + '/' + N + ')';
+        play(i % 2 + 1);
+        var r = await watch(start);
+        if (r.ad) ads++;
+        raws.push('[' + r.raw + ']');
+      }
+      rows.push('<b>' + configs[c][0] + '</b>: 광고 의심 ' + ads + '/' + N + '회');
+      log(configs[c][0] + ' 측정값(초): ' + raws.join(' '));
+    }
+    setPoll(false);
+    player.pauseVideo();
+    $('summary').innerHTML = rows.join('<br>') + '<br>끝났습니다. 위 표를 캡처해서 보내 주세요.';
+    $('auto').disabled = false;
+    running = false;
+  }
+  $('auto').addEventListener('click', autoTest);
+
+  $('o-poll').addEventListener('change', function () { setPoll(this.checked); });
   $('b1').addEventListener('click', function () { play(1); });
   $('b2').addEventListener('click', function () { play(2); });
   var s = document.createElement('script');
