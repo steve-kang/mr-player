@@ -22,6 +22,13 @@
 <label>영상 2 주소 <input id="u2" type="url" placeholder="https://www.youtube.com/watch?v=..."></label>
 <label>시작 초 (두 영상 공통) <input id="st" type="number" value="30"></label>
 <label>끝 초 (두 영상 공통) <input id="en" type="number" value="90"></label>
+<div id="opts" style="margin:10px 0;padding:10px;border:1px solid #2a2f3d;border-radius:10px">
+  <div style="font-size:13px;color:#9aa0b0;margin-bottom:6px">스위치 (처음에는 모두 꺼 두세요. 하나씩 켜면서 시험합니다)</div>
+  <label><input type="checkbox" id="o-end" style="width:auto;min-height:0;margin:0 8px 0 0"> 끝 시각을 YouTube에 전달 (endSeconds)</label>
+  <label><input type="checkbox" id="o-poll" style="width:auto;min-height:0;margin:0 8px 0 0"> 0.15초마다 재생 위치 읽기</label>
+  <label><input type="checkbox" id="o-vol" style="width:auto;min-height:0;margin:0 8px 0 0"> 볼륨 100 설정</label>
+  <label><input type="checkbox" id="o-rate" style="width:auto;min-height:0;margin:0 8px 0 0"> 재생 속도 1 설정</label>
+</div>
 <button id="b1" type="button">영상 1 재생</button>
 <button id="b2" type="button">영상 2 재생</button>
 <pre id="log"></pre>
@@ -40,10 +47,12 @@
     if (!id) { log('영상 ' + n + ' 주소를 확인하세요.'); return; }
     var opts = { videoId: id, startSeconds: Number($('st').value) || 0 };
     var end = Number($('en').value);
-    if (end > opts.startSeconds) opts.endSeconds = end;
+    if ($('o-end').checked && end > opts.startSeconds) opts.endSeconds = end;
     if (!ready) { pending = opts; log('플레이어 준비 중...'); return; }
     log('loadVideoById ' + JSON.stringify(opts));
     player.loadVideoById(opts);
+    if ($('o-rate').checked) player.setPlaybackRate(1);
+    if ($('o-vol').checked) player.setVolume(100);
   }
   window.onYouTubeIframeAPIReady = function () {
     player = new YT.Player('player', {
@@ -51,11 +60,27 @@
       playerVars: { playsinline: 1, controls: 1, rel: 0 },
       events: {
         onReady: function () { ready = true; log('준비됨'); if (pending) { var o = pending; pending = null; player.loadVideoById(o); } },
-        onStateChange: function (e) { log('상태 ' + e.data); },
+        onStateChange: function (e) {
+          log('상태 ' + e.data);
+          if (e.data === 1) {
+            if ($('o-rate').checked && player.getPlaybackRate() !== 1) player.setPlaybackRate(1);
+            if ($('o-vol').checked) player.setVolume(100);
+          }
+        },
         onError: function (e) { log('오류 ' + e.data); }
       }
     });
   };
+  var pollTimer = null;
+  $('o-poll').addEventListener('change', function () {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (this.checked) {
+      pollTimer = setInterval(function () {
+        if (!ready) return;
+        player.getCurrentTime(); player.getPlayerState(); player.getDuration();
+      }, 150);
+    }
+  });
   $('b1').addEventListener('click', function () { play(1); });
   $('b2').addEventListener('click', function () { play(2); });
   var s = document.createElement('script');
